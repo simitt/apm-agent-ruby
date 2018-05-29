@@ -35,6 +35,13 @@ module ElasticAPM
     end
     # rubocop:enable Metrics/MethodLength
 
+    def self.from_args(args={})
+      t = new(args[:instrumenter])
+      args.each do |k,v|
+        t.instance_variable_set("@#{k}", v) unless v.nil?
+      end
+    end
+
     attr_accessor :id, :name, :result, :type
     attr_reader :context, :duration, :dropped_spans, :root_span, :timestamp,
       :spans, :notifications, :sampled, :instrumenter
