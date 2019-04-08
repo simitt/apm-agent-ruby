@@ -31,8 +31,8 @@ module ElasticAPM
       current_user_username_method: :username,
       custom_key_filters: [],
       default_tags: {},
-      disable_start_message: false,
       disable_send: false,
+      disable_start_message: false,
       disabled_spies: %w[json],
       environment: ENV['RAILS_ENV'] || ENV['RACK_ENV'],
       filter_exception_types: [],
@@ -200,6 +200,7 @@ module ElasticAPM
     alias :capture_headers? :capture_headers
     alias :capture_env? :capture_env
     alias :disable_send? :disable_send
+    alias :disable_start_message? :disable_start_message
     alias :http_compression? :http_compression
     alias :instrument? :instrument
     alias :verify_server_cert? :verify_server_cert
