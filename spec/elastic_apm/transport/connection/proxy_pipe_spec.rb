@@ -5,23 +5,27 @@ module ElasticAPM
     RSpec.describe Connection::ProxyPipe do
       describe '.pipe' do
         it 'returns a reader and a writer' do
-          rd, wr = described_class.pipe
+          begin
+            rd, wr = described_class.pipe
 
-          expect(rd).to respond_to(:each)
-          expect(wr).to respond_to(:write)
+            expect(rd).to respond_to(:each)
+            expect(wr).to respond_to(:write)
 
-          expect(rd).to respond_to(:close)
-          expect(wr).to respond_to(:close)
+            expect(rd).to respond_to(:close)
+            expect(wr).to respond_to(:close)
+          ensure
+            wr&.close
+          end
         end
 
         it 'pipes from one to the other' do
-          rd, wr = described_class.pipe
+          rd, wr = described_class.pipe(compress: false)
           ran = false
 
           thread = Thread.new do
             Thread.stop
 
-            expect(rd.read).to eq '123'
+            expect(rd.read).to eq "1\n2\n3\n"
             ran = true
           end
 
@@ -41,13 +45,16 @@ module ElasticAPM
         it 'calls callbacks before reading and writing' do
           did_read = double(call: true)
 
-          rd, wr = described_class.pipe(on_first_read: did_read)
+          rd, wr = described_class.pipe(
+            on_first_read: did_read,
+            compress: false
+          )
 
           wr.write 'test'
 
           thread = Thread.new do
             Thread.stop
-            expect(rd.readpartial(1024)).to eq 'test'
+            expect(rd.readpartial(1024)).to eq "test\n"
 
             expect do
               expect(rd.readpartial(1024)).to eq ''

@@ -18,6 +18,7 @@ module ElasticAPM
           stub = build_stub(body: /{"msg": "hey!"}/)
 
           subject.write('{"msg": "hey!"}')
+          sleep 0.1
 
           expect(subject).to be_connected
 
@@ -58,6 +59,37 @@ module ElasticAPM
             expect(subject).to_not be_connected
 
             expect(stub).to_not have_been_requested
+          end
+        end
+
+        context 'when gzip fails' do
+          it 'handles it' do
+            stub = build_stub(body: /{"msg": "hey!"}/)
+
+            subject.write('{"msg": "hey!"}')
+            sleep 0.1
+
+            expect(subject).to be_connected
+
+            _wr = subject.instance_variable_get(:@wr).io
+            rd = subject.instance_variable_get(:@rd).io
+
+            rd.close
+
+            expect do
+              subject.write('{"msg": "hey!"}')
+            end.to_not raise_error
+
+            expect(stub).to_not have_been_requested
+
+            subject.write('{"msg": "hey!"}')
+            sleep 0.1
+
+            subject.flush
+
+            expect(subject).to_not be_connected
+
+            expect(stub).to have_been_requested
           end
         end
       end

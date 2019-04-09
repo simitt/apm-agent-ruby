@@ -1,34 +1,66 @@
 # frozen_string_literal: true
 
+require 'concurrent'
+
 module ElasticAPM
   module Transport
     class Connection
       # @api private
       class ProxyPipe
-        def initialize(enc = nil, on_first_read: nil)
+        def initialize(enc = nil, on_first_read: nil, compress: true)
           rd, wr = IO.pipe(enc)
 
           @read = Read.new(rd, on_first_read)
-          @write = Write.new(wr)
+          @write = Write.new(wr, compress: compress)
         end
 
         attr_reader :read, :write
 
         # @api private
         class Write
-          def initialize(io)
+          include Logging
+
+          def initialize(io, compress: true)
             @io = io
+            @compress = compress
+            @bytes_sent = Concurrent::AtomicFixnum.new(0)
+            @config = ElasticAPM.agent&.config # this is silly, fix Logging
+
+            return unless compress
+            enable_compression!
           end
 
-          def method_missing(name, *args, &block)
-            return @io.send(name, *args, &block) if @io.respond_to?(name)
-            super
+          attr_reader :io
+
+          def enable_compression!
+            io.binmode
+            @io = Zlib::GzipWriter.new(io)
+          end
+
+          def close(reason = nil)
+            debug("Closing writer with reason #{reason}")
+            io.close
+          end
+
+          def closed?
+            io.closed?
+          end
+
+          def write(str)
+            io.puts(str).tap do
+              @bytes_sent.update do |curr|
+                @compress ? io.tell : curr + str.bytesize
+              end
+            end
+          end
+
+          def bytes_sent
+            @bytes_sent.value
           end
 
           private
 
-          def respond_to_missing?(name, include_all)
-            @io.respond_to?(name) || super
+          def update_bytes_sent(str)
           end
         end
 
@@ -39,13 +71,15 @@ module ElasticAPM
             @callback = callback
           end
 
+          attr_reader :io
+
           def readpartial(*args)
             if @callback
               @callback.call
               @callback = nil
             end
 
-            @io.send(:readpartial, *args)
+            io.readpartial(*args)
           end
 
           # not supported, but http.rb calls it
@@ -64,8 +98,8 @@ module ElasticAPM
           end
         end
 
-        def self.pipe(enc = nil, on_first_read: nil)
-          pipe = new(enc, on_first_read: on_first_read)
+        def self.pipe(*args)
+          pipe = new(*args)
           [pipe.read, pipe.write]
         end
       end

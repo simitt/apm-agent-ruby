@@ -33,35 +33,47 @@ module ElasticAPM
 
         @mutex = Mutex.new
         @state = State.new
-        @bytes_sent = Concurrent::AtomicFixnum.new(0)
       end
 
       attr_reader :state
 
+      # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
       def write(str)
         return if @config.disable_send
 
         connect
         append(str)
 
-        return true unless @bytes_sent.value >= @config.api_request_size
+        return true unless @wr.bytes_sent >= @config.api_request_size
 
-        debug 'Closing request after reaching api_request_size'
-        flush
+        flush(:api_request_size)
 
         true
+      rescue IOError => e
+        error('Connection error: %s', e.inspect)
+        flush(:ioerror)
+        nil
+      rescue Errno::EPIPE => e
+        error('Connection error: %s', e.inspect)
+        flush(:broken_pipe)
+        nil
+      rescue Exception => e
+        error('Connection error: %s', e.inspect)
+        flush(:exception)
+        nil
       end
+      # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
 
       def connected?
         state.connected?
       end
 
-      def flush
+      def flush(reason = :force)
         state.hold do |state|
           return state.value if state.disconnected?
 
           debug "Closing request from #{Thread.current.object_id}"
-          @wr&.close
+          @wr&.close(reason)
         end
 
         @request_thread&.join(2)
@@ -105,17 +117,16 @@ module ElasticAPM
         end
       end
 
-      # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
+      # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       def connect
         state.hold do |state|
           return state.value unless state.disconnected?
 
           debug format('Opening new request from %s', Thread.current.object_id)
-          @rd, @wr = ProxyPipe.pipe(on_first_read: state.method(:connected!))
-
-          enable_compression! if @config.http_compression?
-
-          @bytes_sent.value = 0
+          @rd, @wr = ProxyPipe.pipe(
+            on_first_read: state.method(:connected!),
+            compress: @config.http_compression?
+          )
 
           open_post_request_in_thread
 
@@ -147,8 +158,7 @@ module ElasticAPM
             error "Couldn't establish connection to APM Server:\n%p", e.inspect
           ensure
             if @wr
-              @wr.close unless @wr&.closed?
-              @wr = nil
+              @wr.close(:request) unless @wr&.closed?
             end
 
             @close_task&.cancel
@@ -161,29 +171,14 @@ module ElasticAPM
       def schedule_closing
         @close_task =
           Concurrent::ScheduledTask.execute(@config.api_request_time) do
-            debug 'Closing request after reaching api_request_time'
             @close_task = nil # inception
-            flush
+            flush(:api_request_time)
           end
       end
 
-      def enable_compression!
-        @wr.binmode
-        @wr = Zlib::GzipWriter.new(@wr)
-      end
-
       def append(str)
-        @wr.puts(str)
-        update_bytes_sent(str)
+        @wr.write(str)
         str
-      end
-
-      def update_bytes_sent(str)
-        if @config.http_compression
-          @bytes_sent.value = @wr.tell
-        else
-          @bytes_sent.update { |curr| curr + str.bytesize }
-        end
       end
     end
     # rubocop:enable Metrics/ClassLength
