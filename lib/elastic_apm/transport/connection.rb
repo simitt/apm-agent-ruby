@@ -70,7 +70,7 @@ module ElasticAPM
 
       def flush(reason = :force)
         state.hold do |state|
-          return state.value if state.disconnected?
+          return if state.disconnected?
 
           debug "Closing request from #{Thread.current.object_id}"
           @wr&.close(reason)
