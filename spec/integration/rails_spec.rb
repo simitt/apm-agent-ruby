@@ -29,6 +29,7 @@ if defined?(Rails)
 
         config.action_mailer.perform_deliveries = false
 
+        config.elastic_apm.http_compression = false
         config.elastic_apm.api_request_time = '100ms'
         config.elastic_apm.capture_body = 'all'
         config.elastic_apm.pool_size = Concurrent.processor_count

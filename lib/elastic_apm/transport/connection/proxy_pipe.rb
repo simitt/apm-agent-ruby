@@ -68,6 +68,15 @@ module ElasticAPM
 
           attr_reader :io
 
+          def read(*args)
+            if @callback
+              @callback.call
+              @callback = nil
+            end
+
+            io.read(*args)
+          end
+
           def readpartial(*args)
             if @callback
               @callback.call

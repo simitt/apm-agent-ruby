@@ -18,7 +18,7 @@ module ElasticAPM
           stub = build_stub(body: /{"msg": "hey!"}/)
 
           subject.write('{"msg": "hey!"}')
-          sleep 0.1
+          sleep 0.2
 
           expect(subject).to be_connected
 
@@ -39,9 +39,11 @@ module ElasticAPM
 
           threads.each(&:join)
 
-          expect(subject).to be_connected
+          sleep 0.2
 
+          expect(subject).to be_connected
           subject.flush
+
           expect(subject).to_not be_connected
 
           expect(stub).to have_been_requested
@@ -129,7 +131,8 @@ module ElasticAPM
 
           subject.write('{}')
 
-          sleep 0.2
+          sleep 0.5
+
           expect(subject).to_not be_connected
 
           expect(stub).to have_been_requested

@@ -39,10 +39,12 @@ module ElasticAPM
 
       # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
       def write(str)
-        return if @config.disable_send
+        return false if @config.disable_send
 
         connect
-        append(str)
+        @mutex.synchronize do
+          append(str)
+        end
 
         return true unless @wr.bytes_sent >= @config.api_request_size
 
@@ -69,14 +71,24 @@ module ElasticAPM
       end
 
       def flush(reason = :force)
-        state.hold do |state|
+        @mutex.synchronize do
           return if state.disconnected?
 
           debug "Closing request from #{Thread.current.object_id}"
           @wr&.close(reason)
+
+          loop until state.disconnected?
         end
 
         @request_thread&.join(2)
+      end
+
+      def inspect
+        format(
+          '%s state:%s>',
+          super.split.first,
+          State::STATES.key(state.value)
+        )
       end
 
       private
@@ -119,20 +131,22 @@ module ElasticAPM
 
       # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       def connect
-        state.hold do |state|
-          return state.value unless state.disconnected?
+        @mutex.synchronize do
+          return unless state.disconnected?
+          state.connecting!
 
           debug format('Opening new request from %s', Thread.current.object_id)
           @rd, @wr = ProxyPipe.pipe(
-            on_first_read: state.method(:connected!),
+            on_first_read: -> { state.connected! },
             compress: @config.http_compression?
           )
 
           open_post_request_in_thread
-
-          schedule_closing if @config.api_request_time
+          wait_for_connection
 
           append(@metadata)
+
+          schedule_closing if @config.api_request_time
         end
       end
       # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
@@ -157,21 +171,21 @@ module ElasticAPM
           rescue Exception => e
             error "Couldn't establish connection to APM Server:\n%p", e.inspect
           ensure
-            if @wr
-              @wr.close(:request) unless @wr&.closed?
-            end
-
-            @close_task&.cancel
             state.disconnected!
+            @close_task&.cancel
           end
         end
       end
       # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
 
+      def wait_for_connection
+        loop while state.connecting?
+      end
+
       def schedule_closing
+        @close_task&.cancel
         @close_task =
           Concurrent::ScheduledTask.execute(@config.api_request_time) do
-            @close_task = nil # inception
             flush(:api_request_time)
           end
       end

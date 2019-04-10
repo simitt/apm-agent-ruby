@@ -4,7 +4,7 @@ require 'spec_helper'
 
 module ElasticAPM
   module Transport
-    RSpec.describe Base do
+    RSpec.describe Base, :mock_intake do
       let(:config) { Config.new }
 
       subject { described_class.new config }
@@ -21,8 +21,17 @@ module ElasticAPM
 
         it 'stops all workers', :mock_intake do
           subject.start
+
+          subject.submit Transaction.new
+          subject.submit Transaction.new
+          subject.submit Transaction.new
+          subject.submit Transaction.new
+          subject.submit Transaction.new
           subject.submit Transaction.new
           subject.stop
+
+          wait_for transactions: 6
+
           expect(subject.workers.length).to be 0
         end
       end

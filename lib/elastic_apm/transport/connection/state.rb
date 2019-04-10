@@ -24,35 +24,9 @@ module ElasticAPM
           @atom.value
         end
 
-        def hold
-          @atom.update do
-            yield self
-            nil
-          end
-        end
-
-        def disconnected!
-          self.value = STATES[:disconnected]
-        end
-
-        def disconnected?
-          value == STATES[:disconnected]
-        end
-
-        def connecting!
-          self.value = STATES[:connecting]
-        end
-
-        def connecting?
-          value == STATES[:connecting]
-        end
-
-        def connected!
-          self.value = STATES[:connected]
-        end
-
-        def connected?
-          value == STATES[:connected]
+        STATES.each do |key, value|
+          define_method(:"#{key}!") { self.value = value }
+          define_method(:"#{key}?") { self.value == value }
         end
 
         def inspect

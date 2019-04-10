@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'fakeredis/rspec'
 require 'sidekiq'
 require 'sidekiq/manager'
 require 'sidekiq/testing'
