@@ -57,11 +57,6 @@ module ElasticAPM
           def bytes_sent
             @bytes_sent.value
           end
-
-          private
-
-          def update_bytes_sent(str)
-          end
         end
 
         # @api private
