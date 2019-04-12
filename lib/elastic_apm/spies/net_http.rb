@@ -28,8 +28,8 @@ module ElasticAPM
         end
       end
 
+      # @api private
       module Overrides
-        # @api private
         def request(req, body = nil)
           return super if ElasticAPM::Spies::NetHTTPSpy.disabled?
 
