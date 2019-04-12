@@ -9,7 +9,8 @@ module ElasticAPM
         STATES = {
           disconnected: 0,
           connecting: 1,
-          connected: 2
+          connected: 2,
+          closing: 3
         }.freeze
 
         def initialize(value: STATES[:disconnected])

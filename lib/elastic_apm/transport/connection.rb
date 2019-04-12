@@ -42,11 +42,9 @@ module ElasticAPM
         return false if @config.disable_send
 
         connect
-        @mutex.synchronize do
-          append(str)
-        end
+        append(str)
 
-        return true unless @wr.bytes_sent >= @config.api_request_size
+        return true if !state.closing? && @wr.bytes_sent < @config.api_request_size
 
         flush(:api_request_size)
 
@@ -71,14 +69,12 @@ module ElasticAPM
       end
 
       def flush(reason = :force)
-        @mutex.synchronize do
-          return if state.disconnected?
+        return if state.disconnected?
 
-          debug "Closing request from #{Thread.current.object_id}"
-          @wr&.close(reason)
+        debug "Closing request from #{Thread.current.object_id}"
+        @wr&.close(reason)
 
-          loop until state.disconnected?
-        end
+        loop until state.disconnected?
 
         @request_thread&.join(2)
       end
@@ -131,23 +127,21 @@ module ElasticAPM
 
       # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
       def connect
-        @mutex.synchronize do
-          return unless state.disconnected?
-          state.connecting!
+        return unless state.disconnected?
+        state.connecting!
 
-          debug format('Opening new request from %s', Thread.current.object_id)
-          @rd, @wr = ProxyPipe.pipe(
-            on_first_read: -> { state.connected! },
-            compress: @config.http_compression?
-          )
+        debug format('Opening new request from %s', Thread.current.object_id)
+        @rd, @wr = ProxyPipe.pipe(
+          on_first_read: -> { state.connected! },
+          compress: @config.http_compression?
+        )
 
-          open_post_request_in_thread
-          wait_for_connection
+        open_post_request_in_thread
+        wait_for_connection
 
-          append(@metadata)
+        append(@metadata)
 
-          schedule_closing if @config.api_request_time
-        end
+        schedule_closing if @config.api_request_time
       end
       # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
 
@@ -186,13 +180,14 @@ module ElasticAPM
         @close_task&.cancel
         @close_task =
           Concurrent::ScheduledTask.execute(@config.api_request_time) do
-            flush(:api_request_time)
+            state.closing!
           end
       end
 
       def append(str)
         @wr.write(str)
-        str
+        puts "\n"
+        puts str
       end
     end
     # rubocop:enable Metrics/ClassLength
