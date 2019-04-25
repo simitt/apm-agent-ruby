@@ -13,16 +13,17 @@ module ElasticAPM
       class Http
         include Logging
 
-        def initialize(config, url, metadata, headers: {}, ssl_context: nil)
+        def initialize(config)
           @config = config
-          @mutex = Mutex.new
           @closed = Mutex.new
 
           @rd, @wr = ProxyPipe.pipe(
             compress: @config.http_compression?
           )
+        end
+
+        def start(url, headers: {}, ssl_context: nil)
           @request = init_request(url, headers, ssl_context)
-          append(metadata)
         end
 
         def write(str)
@@ -34,15 +35,12 @@ module ElasticAPM
         def close(reason)
           return if closed?
 
-          debug "Closing request from #{Thread.current.object_id} with reason #{reason}"
+          debug "Closing request from Thread[#{Thread.current.object_id}] with reason #{reason}"
           return unless @closed.try_lock
-          @mutex.synchronize do
-            @wr&.close(reason)
-          end
-          # TODO: SIMI: make read timeout configurable or work with thread pools here
-          return if @request&.join(5)
+          @wr&.close(reason)
+          return if @request.nil? || @request&.join(5)
 
-          error 'Request could not finish in time, terminating request'
+          error 'APM Server not responding in time, terminating request'
           @request.kill
         end
         # rubocop:enable Metrics/LineLength
@@ -62,15 +60,13 @@ module ElasticAPM
         private
 
         def append(str)
-          @mutex.synchronize do
-            @wr.write(str)
-          end
+          @wr.write(str)
         end
 
         # rubocop:disable Metrics/LineLength
         def init_request(url, headers, ssl_context)
           client = build_client(headers)
-          debug format('Opening new request from %s', Thread.current.object_id)
+          debug "Opening new request from Thread[#{Thread.current.object_id}]"
           Thread.new do
             begin
               post(client, url, ssl_context)

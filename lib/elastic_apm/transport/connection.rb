@@ -11,6 +11,14 @@ module ElasticAPM
     class Connection
       include Logging
 
+      HEADERS = {
+        'Content-Type' => 'application/x-ndjson',
+        'Transfer-Encoding' => 'chunked'
+      }.freeze
+      GZIP_HEADERS = HEADERS.merge(
+        'Content-Encoding' => 'gzip'
+      ).freeze
+
       def initialize(config, metadata)
         @config = config
         @metadata = JSON.fast_generate(metadata)
@@ -38,6 +46,9 @@ module ElasticAPM
         rescue Errno::EPIPE => e
           error('Connection error: %s', e.inspect)
           flush(:broken_pipe)
+        rescue Exception => e
+          error('Connection error: %s', e.inspect)
+          flush(:connection_error)
         end
       end
       # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
@@ -63,9 +74,9 @@ module ElasticAPM
 
       def connect
         schedule_closing if @config.api_request_time
-        @http = Http.new(@config, @url, @metadata,
-          headers: @headers,
-          ssl_context: @ssl_context)
+        @http = Http.new(@config)
+        @http.start(@url, headers: @headers, ssl_context: @ssl_context)
+        @http.write(@metadata)
       end
       # rubocop:enable
 
@@ -76,14 +87,6 @@ module ElasticAPM
             flush(:timeout)
           end
       end
-
-      HEADERS = {
-        'Content-Type' => 'application/x-ndjson',
-        'Transfer-Encoding' => 'chunked'
-      }.freeze
-      GZIP_HEADERS = HEADERS.merge(
-        'Content-Encoding' => 'gzip'
-      ).freeze
 
       def build_headers
         (

@@ -15,7 +15,11 @@ module ElasticAPM
         { 'Transfer-Encoding' => 'chunked',
           'Content-Type' => 'application/x-ndjson' }
       end
-      subject { described_class.new(config, url, metadata, headers: headers) }
+      subject do
+        http = described_class.new(config)
+        http.start(url, headers: headers)
+        http
+      end
 
       describe '#initialize' do
         it 'is has no active connection' do
@@ -24,9 +28,16 @@ module ElasticAPM
       end
 
       describe 'write and close' do
+        subject do
+          http = described_class.new(config)
+          http.start(url, headers: headers)
+          http
+        end
+
         it 'sends metadata' do
           stub = build_stub(body: /metadata/, headers: headers)
 
+          subject.write(metadata)
           subject.write('{"msg": "hey!"}')
           sleep 0.2
 
@@ -104,6 +115,7 @@ module ElasticAPM
             req
           end
 
+          subject.write(metadata)
           subject.write('{}')
           subject.close(:api_request_size)
 

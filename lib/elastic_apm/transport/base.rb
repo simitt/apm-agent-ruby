@@ -113,8 +113,8 @@ module ElasticAPM
       end
 
       def init_supervisor
-        @supervisor = Concurrent::TimerTask.new(execution_interval: 30,
-                                                timeout_interval: 25) do
+        @supervisor = Concurrent::TimerTask.new(execution_interval: 2,
+                                                timeout_interval: 1) do
           ensure_worker_count unless stopped?
         end
       end
